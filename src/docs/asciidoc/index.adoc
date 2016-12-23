@@ -1,0 +1,222 @@
+= Hyphen analysis for Elasticsearch
+Jörg Prante
+Version 1.0
+:sectnums:
+:toc: preamble
+:toclevels: 4
+:!toc-title: Content
+:experimental:
+:description: Hyphen analysis for Elasticsearch
+:keywords: Elasticsearch, Plugin, Hyphen analysis
+:icons: font
+
+== What is hyphen analysis?
+
+Usually, you index only words into Elasticsearch, and ignore other symbols like delimiters, punctuation, hyphens,
+apostrophs, which can be found within words or at word boundaries.
+
+But that does not always work out right. Entity names (like organization names, person names, or
+book titles) may carry symbols as part of the identifying function that makes the entity name unique, but
+are often ignored or handled sloppily when search terms are being entered for that names.
+
+Or in german language, there are many _Bindestrichwörter_ which consist of word parts that are connected by a hyphen
+symbol. In many cases, sloppy searchers are not using in-word hyphens correctly and will therefore not get correct
+search results.
+
+For example, indexing entity names like `U.S.A.`, `Programming with C++`, `O'Grady`, `Corinna's Cause`
+are a challenge when being searched for.
+Often it is preferable to have successful searches for related terms like `usa`, `ogrady`, `corinnas cause`.
+On the other hand, you want to avoid false hits, when searching for `Programming with C`.
+So, `C++` must not be indexed as `C`.
+
+To achieve that, we use `whitespace` tokenzing together with a special character-based hyphen symbol detection that
+allows for indexing multiples forms of the same word in the token chain.
+`Corinna's` will be indexed as `Corinna`, `Corinnas`, and `Corinna's` to generate hits when searching for that forms.
+
+Entity names like "C++" or "AT&T" can be protected by the `keyword_marker` filter available in Elasticsearch.
+THat means, they are preserved throughout the process.
+
+Here is an exmaple to demonstrate the hyphen analyzer at work.
+
+== Example for Elasticsearch 5.x
+
+[source]
+----
+PUT /test
+{
+   "settings": {
+      "index": {
+         "analysis": {
+            "filter": {
+               "hyphen": {
+                  "type": "hyphen",
+                  "hyphens": "+-'",
+                  "respect_keywords": true
+               },
+               "marker": {
+                  "type": "keyword_marker",
+                  "keywords": [
+                     "C++",
+                     "AT&T"
+                  ]
+               }
+            },
+            "analyzer": {
+               "my_analyzer": {
+                  "type": "custom",
+                  "tokenizer": "whitespace",
+                  "filter": [
+                     "marker",
+                     "hyphen"
+                  ]
+               }
+            }
+         }
+      }
+   },
+   "mappings": {
+      "docs": {
+         "properties": {
+            "text": {
+               "type": "text",
+               "analyzer": "my_analyzer"
+            }
+         }
+      }
+   }
+}
+GET /test/_settings
+GET /test/_mapping
+
+PUT /test/docs/1
+{
+    "text" : "Corinna's Cause"
+}
+
+PUT /test/docs/2
+{
+    "text" : "U+002B"
+}
+
+PUT /test/docs/3
+{
+    "text" : "Programming C++"
+}
+
+PUT /test/docs/4
+{
+    "text" : "Build a career with AT&T"
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Corinna Cause",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Corinnas Cause",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Corinna's Cause",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "002B",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "U\\+002B",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Programming C\\+\\+",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Programming C",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Build a career with AT&T",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Build a career with ATT",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+----
+
+== Options
+
+These options can be used for the token filter in the settings.
+
+[horizontal]
+hyphens:: a string containing characters that should be used for detection. Default is `-`
+respect_keywords:: if `true`, do not process words protected by the `keyword_marker` filter. Default is `false`
+
+
+== Gradle test report
+
+The current test report is link:test[here]

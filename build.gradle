@@ -1,0 +1,160 @@
+
+plugins {
+    id "org.sonarqube" version "2.2"
+    id "org.xbib.gradle.plugin.jflex" version "1.1.0"
+    id "org.xbib.gradle.plugin.asciidoctor" version "1.5.4.1.0"
+}
+
+printf "Host: %s\nOS: %s %s %s\nJVM: %s %s %s %s\nGroovy: %s\nGradle: %s\n" +
+        "Build: group: ${project.group} name: ${project.name} version: ${project.version}\n",
+        InetAddress.getLocalHost(),
+        System.getProperty("os.name"),
+        System.getProperty("os.arch"),
+        System.getProperty("os.version"),
+        System.getProperty("java.version"),
+        System.getProperty("java.vm.version"),
+        System.getProperty("java.vm.vendor"),
+        System.getProperty("java.vm.name"),
+        GroovySystem.getVersion(),
+        gradle.gradleVersion
+
+ext {
+    pluginName = 'hyphen'
+    pluginClassname  = 'org.xbib.elasticsearch.plugin.hyphen.HyphenPlugin'
+    pluginDescription = 'Hyphen analysis for Elasticsearch'
+    user = 'jprante'
+    name = 'elasticsearch-analysis-hyphen'
+    scmUrl = 'https://github.com/' + user + '/' + name
+    scmConnection = 'scm:git:git://github.com/' + user + '/' + name + '.git'
+    scmDeveloperConnection = 'scm:git:git://github.com/' + user + '/' + name + '.git'
+    versions = [
+        'elasticsearch' : '5.1.1',
+        'log4j': '2.7'
+    ]
+}
+
+apply plugin: 'java'
+apply plugin: 'maven'
+apply plugin: 'signing'
+apply plugin: 'findbugs'
+apply plugin: 'pmd'
+apply plugin: 'checkstyle'
+apply plugin: "jacoco"
+apply plugin: 'org.xbib.gradle.plugin.jflex'
+apply plugin: 'org.xbib.gradle.plugin.asciidoctor'
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    wagon
+    distJars {
+        extendsFrom runtime
+        exclude group: 'org.elasticsearch'
+        exclude module: 'lucene-core'
+        exclude module: 'lucene-analyzers-common'
+        exclude module: 'jna'
+        exclude module: 'jackson-core'
+        exclude module: 'jackson-dataformat-smile'
+        exclude module: 'jackson-dataformat-yaml'
+        exclude module: 'jflex'
+    }
+}
+
+dependencies {
+    compile "org.elasticsearch:elasticsearch:${versions.elasticsearch}"
+    compileOnly "org.apache.logging.log4j:log4j-core:${versions.log4j}"
+    testCompile "junit:junit:4.12"
+    testCompile "org.apache.logging.log4j:log4j-core:${versions.log4j}"
+    distJars "${project.group}:${project.name}:${project.version}"
+    wagon 'org.apache.maven.wagon:wagon-ssh-external:2.10'
+}
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:all" << "-profile" << "compact2"
+}
+
+test {
+    systemProperties['path.home'] = System.getProperty("user.dir")
+    testLogging {
+        showStandardStreams = false
+        exceptionFormat = 'full'
+    }
+    reports.html.destination = "docs/test"
+}
+
+task makePluginDescriptor(type: Copy) {
+    from 'src/main/templates'
+    into 'build/tmp/plugin'
+    expand([
+            'descriptor': [
+                'name': pluginName,
+                'classname': pluginClassname,
+                'description': pluginDescription,
+                'version': project.property('version'),
+                'javaVersion': project.property('targetCompatibility'),
+                'elasticsearchVersion' : versions.elasticsearch
+            ]
+    ])
+}
+
+task buildPluginZip(type: Zip, dependsOn: [':jar', ':makePluginDescriptor']) {
+    from configurations.distJars
+    from 'build/tmp/plugin'
+    into 'elasticsearch'
+    classifier = 'plugin'
+}
+
+task unpackPlugin(type: Copy, dependsOn: [':buildPluginZip']) {
+    delete "plugins"
+    from configurations.distJars
+    from 'build/tmp/plugin'
+    into "plugins/${pluginName}"
+}
+
+clean {
+    delete "plugins"
+    delete "data"
+    delete "logs"
+}
+
+asciidoctor {
+    backends 'html5'
+    outputDir = file('docs')
+    separateOutputDirs = false
+    attributes 'source-highlighter': 'coderay',
+            toc                 : '',
+            idprefix            : '',
+            idseparator         : '-',
+            stylesheet: "${projectDir}/src/docs/asciidoc/css/bootstrap_cerulean.min.css"
+}
+
+task javadocJar(type: Jar, dependsOn: classes) {
+    from javadoc
+    into 'build/tmp'
+    classifier 'javadoc'
+}
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+    from sourceSets.main.allSource
+    into 'build/tmp'
+    classifier 'sources'
+}
+
+artifacts {
+    archives javadocJar, sourcesJar, buildPluginZip
+}
+
+if (project.hasProperty('signing.keyId')) {
+    signing {
+        sign configurations.archives
+    }
+}
+
+apply from: 'gradle/publish.gradle'
+apply from: 'gradle/sonarqube.gradle'
