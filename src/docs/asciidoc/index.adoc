@@ -23,7 +23,7 @@ Or in german language, there are many _Bindestrichwörter_ which consist of word
 symbol. In many cases, sloppy searchers are not using in-word hyphens correctly and will therefore not get correct
 search results.
 
-
+For examples in german, see https://de.wikipedia.org/wiki/Viertelgeviertstrich
 
 For example, indexing entity names like
 _U.S.A._, _O'Grady_, _Corinna's Cause_ or _Programming with C+\+_

@@ -4,7 +4,8 @@
             "tokenizer" : {
                 "my_hyphen_tokenizer" : {
                     "type" : "hyphen",
-                    "hyphens": "."
+                    "hyphens": ".",
+                    "respect_keywords" : true
                 }
             }
         }
