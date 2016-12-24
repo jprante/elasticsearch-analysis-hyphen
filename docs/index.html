@@ -120,9 +120,16 @@ table.CodeRay td.code>pre{padding:0}
 <div id="toctitle"></div>
 <ul class="sectlevel1">
 <li><a href="#what-is-hyphen-analysis">1. What is hyphen analysis?</a></li>
-<li><a href="#example-for-elasticsearch-5-x">2. Example for Elasticsearch 5.x</a></li>
-<li><a href="#options">3. Options</a></li>
-<li><a href="#gradle-test-report">4. Gradle test report</a></li>
+<li><a href="#lucene-standard-tokenization-follows-unicode-tokenization-rules">2. Lucene standard tokenization follows Unicode tokenization rules</a></li>
+<li><a href="#hyphen-tokenizer-example-for-elasticsearch-5-x">3. Hyphen tokenizer example for Elasticsearch 5.x</a></li>
+<li><a href="#the-hyphen-token-filter">4. The hyphen token filter</a>
+<ul class="sectlevel2">
+<li><a href="#hyphen-token-filter-example-for-elasticsearch-5-x">4.1. Hyphen token filter example for Elasticsearch 5.x</a></li>
+</ul>
+</li>
+<li><a href="#the-hyphen-analyzer">5. The Hyphen Analyzer</a></li>
+<li><a href="#options">6. Options</a></li>
+<li><a href="#gradle-test-report">7. Gradle test report</a></li>
 </ul>
 </div>
 </div>
@@ -131,8 +138,8 @@ table.CodeRay td.code>pre{padding:0}
 <h2 id="what-is-hyphen-analysis">1. What is hyphen analysis?</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Usually, you index only words into Elasticsearch, and ignore other symbols like delimiters, punctuation, hyphens,
-apostrophs, which can be found within words or at word boundaries.</p>
+<p>Usually, you index only words into Elasticsearch, and the indexing does not care about other symbols like
+delimiters, punctuation, hyphens, apostrophs, or other caracters which can be found within words or at word boundaries.</p>
 </div>
 <div class="paragraph">
 <p>But that does not always work out right. Entity names (like organization names, person names, or
@@ -145,29 +152,175 @@ symbol. In many cases, sloppy searchers are not using in-word hyphens correctly 
 search results.</p>
 </div>
 <div class="paragraph">
-<p>For example, indexing entity names like <code>U.S.A.</code>, <code>Programming with C`, `O'Grady`, `Corinna's Cause`
+<p>For example, indexing entity names like
+<em>U.S.A.</em>, <em>O&#8217;Grady</em>, <em>Corinna&#8217;s Cause</em> or <em>Programming with C++</em>
 are a challenge when being searched for.
-Often it is preferable to have successful searches for related terms like `usa`, `ogrady`, `corinnas cause`.
-On the other hand, you want to avoid false hits, when searching for `Programming with C`.
-So, `C</code> must not be indexed as <code>C</code>.</p>
+Often it is preferable to have successful searches for related terms like <code>usa</code>, <code>ogrady</code>, <code>corinnas cause</code>.
+On the other hand, you want to avoid false hits, when searching for <code>Programming with C</code>.
+So, <code>C++</code> must not be indexed as <code>C</code>.</p>
 </div>
 <div class="paragraph">
-<p>To achieve that, we use <code>whitespace</code> tokenzing together with a special character-based hyphen symbol detection that
+<p>To achieve that, we use <code>hyphen</code> tokenizing together with a special character-based hyphen symbol detection that
 allows for indexing multiples forms of the same word in the token chain.
 <code>Corinna&#8217;s</code> will be indexed as <code>Corinna</code>, <code>Corinnas</code>, and <code>Corinna&#8217;s</code> to generate hits when searching for that forms.</p>
 </div>
 <div class="paragraph">
 <p>Entity names like "C++" or "AT&amp;T" can be protected by the <code>keyword_marker</code> filter available in Elasticsearch.
-THat means, they are preserved throughout the process.</p>
-</div>
-<div class="paragraph">
-<p>Here is an exmaple to demonstrate the hyphen analyzer at work.</p>
+That means, they are preserved throughout the process.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="example-for-elasticsearch-5-x">2. Example for Elasticsearch 5.x</h2>
+<h2 id="lucene-standard-tokenization-follows-unicode-tokenization-rules">2. Lucene standard tokenization follows Unicode tokenization rules</h2>
 <div class="sectionbody">
+<div class="paragraph">
+<p>Lucene 4+ is using a new tokenzation by default and switched from a grammar-based tokenzation
+(now called the classic tokenization)
+to Unicode-based tokenization (also known as <a href="http://unicode.org/reports/tr29/">UAX#29</a>).</p>
+</div>
+<div class="paragraph">
+<p>Lucene default tokenization before Lucene 4 was focusing on european languages only. The "classic" tokenizer
+does not work well with asian languages for example.</p>
+</div>
+<div class="paragraph">
+<p>The challenge is now, while Lucene is now adhering to international standards, which is a good thing,
+it does no longer treat hyphens as word part delimiters and ignores them:</p>
+</div>
+<div class="quoteblock">
+<blockquote>
+<div class="paragraph">
+<p><em>The correct interpretation of hyphens in the context of word boundaries is challenging. It is quite common
+for separate words to be connected with a hyphen: “out-of-the-box,” “under-the-table,” “Italian-American,” and so on.
+A significant number are hyphenated names, such as “Smith-Hawkins.” When doing a Whole Word Search or query,
+users expect to find the word within those hyphens. While there are some cases where they are separate words
+(usually to resolve some ambiguity such as “re-sort” as opposed to “resort”), it is better overall to keep the
+hyphen out of the default definition.</em> (<a href="http://unicode.org/reports/tr29/" class="bare">http://unicode.org/reports/tr29/</a>)</p>
+</div>
+</blockquote>
+</div>
+<div class="paragraph">
+<p>The solution this plugin offers is an improved implementation of the old classic tokenizer by a rewritten JFlex grammar
+that takes more composed word fragments together. A tricky aspect is to detect superfluous adjunct characters
+but keep them in acronyms like "U.S.A." so the character will be dropped correctly before indexing.</p>
+</div>
+<div class="paragraph">
+<p>The hyphen tokenizer uses the Unicode "Pd" (Punctuation Dash Category) to detect punctuation in words.</p>
+</div>
+<div class="paragraph">
+<p>The price this solution pays is that it does not conform to Unicode tokenization rules. So it is
+recommended to use hyphen tokenization on european language fields only.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="hyphen-tokenizer-example-for-elasticsearch-5-x">3. Hyphen tokenizer example for Elasticsearch 5.x</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>In this example, it is demonstrated how the token "E-Book" is indexed. It generates tokens so that "E-Book", "EBook",
+and "Book" will match.</p>
+</div>
+<div class="paragraph">
+<p>While the hyphen tokenizer cares about the comma and suppresses the character,
+the hyphen token filter cares about creating "EBook" and "Book" tokens.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>PUT /test
+{
+   "settings": {
+      "index": {
+         "analysis": {
+            "analyzer": {
+               "my_analyzer": {
+                  "type": "custom",
+                  "tokenizer": "hyphen",
+                  "filter" : [ "hyphen", "lowercase" ]
+               }
+            }
+         }
+      }
+   },
+   "mappings": {
+      "docs": {
+         "properties": {
+            "text": {
+               "type": "text",
+               "analyzer": "my_analyzer"
+            }
+         }
+      }
+   }
+}
+GET /test/_settings
+GET /test/_mapping
+
+PUT /test/docs/1
+{
+    "text" : "Read this E-Book, or you will miss the best"
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "E-Book",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "EBook",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "ebook",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "book",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="the-hyphen-token-filter">4. The hyphen token filter</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The hyphen token filter can be used in conjunction with any tokenizer. It focuses on a single word and examines
+them for generating one or more tokens. Connected word fragments are detected by using the
+Unicode "L" (Letter Category). The token filter does not use the improved JFlex grammar technique.</p>
+</div>
+<div class="paragraph">
+<p>Here is an example to demonstrate the hyphen analyzer at work. The <code>whitespace</code> tokenizer is used here but
+it does not guarantee to remove adjunct punctuation. Therefore, in realw rold data, you should always use the
+hyphen tokenizer accompanying the hyphen token filter.</p>
+</div>
+<div class="sect2">
+<h3 id="hyphen-token-filter-example-for-elasticsearch-5-x">4.1. Hyphen token filter example for Elasticsearch 5.x</h3>
 <div class="listingblock">
 <div class="content">
 <pre class="CodeRay highlight"><code>PUT /test
@@ -338,11 +491,103 @@ POST /test/docs/_search
 </div>
 </div>
 </div>
+</div>
 <div class="sect1">
-<h2 id="options">3. Options</h2>
+<h2 id="the-hyphen-analyzer">5. The Hyphen Analyzer</h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>These options can be used for the token filter in the settings.</p>
+<p>For convenience, this plugin provides a hyphen analyzer which is a custom analyzer with a hyphen tokenizer.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="CodeRay highlight"><code>PUT /test
+{
+   "settings": {
+      "index": {
+         "analysis": {
+            "analyzer": {
+               "my_analyzer": {
+                  "type": "hyphen"
+               }
+            }
+         }
+      }
+   },
+   "mappings": {
+      "docs": {
+         "properties": {
+            "text": {
+               "type": "text",
+               "analyzer": "my_analyzer"
+            }
+         }
+      }
+   }
+}
+GET /test/_settings
+GET /test/_mapping
+
+PUT /test/docs/1
+{
+    "text" : "Read this E-Book, or you will miss the best"
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "E-Book",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "EBook",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}
+
+POST /test/docs/_search
+{
+    "query": {
+        "simple_query_string": {
+            "query" : "Book",
+            "fields" : [ "text" ],
+            "default_operator": "and"
+        }
+    }
+}</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="options">6. Options</h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>These options can be used for the hyphen tokenizer.</p>
+</div>
+<div class="hdlist">
+<table>
+<tr>
+<td class="hdlist1">
+max_token_length
+</td>
+<td class="hdlist2">
+<p>maximum length of a single token that will be indexed. Default is 255 (StandardAnalyzer.DEFAULT_MAX_TOKEN_LENGTH)</p>
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>These options can be used for the hyphen token filter.</p>
 </div>
 <div class="hdlist">
 <table>
@@ -352,6 +597,14 @@ hyphens
 </td>
 <td class="hdlist2">
 <p>a string containing characters that should be used for detection. Default is <code>-</code></p>
+</td>
+</tr>
+<tr>
+<td class="hdlist1">
+subwords
+</td>
+<td class="hdlist2">
+<p>if subwords should be generated as tokens. Default is <code>true</code></p>
 </td>
 </tr>
 <tr>
@@ -367,7 +620,7 @@ respect_keywords
 </div>
 </div>
 <div class="sect1">
-<h2 id="gradle-test-report">4. Gradle test report</h2>
+<h2 id="gradle-test-report">7. Gradle test report</h2>
 <div class="sectionbody">
 <div class="paragraph">
 <p>The current test report is <a href="test">here</a></p>
@@ -377,7 +630,7 @@ respect_keywords
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2016-12-23 10:50:03 MEZ
+Last updated 2016-12-24 02:00:13 MEZ
 </div>
 </div>
 </body>

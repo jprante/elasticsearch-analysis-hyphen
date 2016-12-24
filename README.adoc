@@ -17,7 +17,7 @@ This plugin also helps when analyzing acronyms or symbols in names because the h
 configurable by the symbols that connect parts of a word. Also, keywords may be optionally respected.
 So it is possible to index `Programming in C++` differently from `Programming in C`
 
-++ Documentation
+== Documentation
 
 For examples, see the link:https://jprante.github.io/elasticsearch-analysis-hyphen[documentation]
 
